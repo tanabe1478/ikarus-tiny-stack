@@ -143,8 +143,7 @@ jobs:
           @'
           デフォルト設定で自動生成したTiny Stackです。
 
-          - 元のスタック数を5倍
-          - 最大スタック数は1000
+          - 元からスタック可能なアイテムを一律1000
           - 個別指定なし
           - 収納枠や容器容量は変更しません
           - ICARUS Dedicated Server公開データから生成
@@ -160,7 +159,7 @@ jobs:
             ".\dist\SHA256SUMS.txt"
           )
           gh release create $tag @assets `
-            --title "Tiny Stack v$($manifest.version) default (x5 / cap 1000)" `
+            --title "Tiny Stack v$($manifest.version) default (fixed 1000)" `
             --notes-file $notesPath `
             --latest
           if ($LASTEXITCODE -ne 0) {

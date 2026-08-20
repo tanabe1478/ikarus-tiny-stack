@@ -1,7 +1,7 @@
 {
   "global": {
-    "mode": "multiplier",
-    "value": 5,
+    "mode": "fixed",
+    "value": 1000,
     "cap": 1000
   },
   "individual": {}

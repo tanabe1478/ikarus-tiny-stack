@@ -3,9 +3,23 @@
 ICARUSのゲームデータから独立生成する、設定生成式の軽量スタックMODです。
 Caramel Stack size Plusのファイルやデータは使用していません。
 
-通常利用向けには、デフォルト設定で生成済みのPAKを
-[GitHub Releases](https://github.com/tanabe1478/ikarus-tiny-stack/releases)で配布します。
-設定を変更しない場合、利用者側でのビルドは不要です。
+## デフォルト版を使う（ビルド不要）
+
+通常利用向けのデフォルト版は、元からスタック可能なアイテムを一律1000にします。
+設定を変更しない場合、PythonやPAKツールは必要ありません。
+
+1. ほかのスタック数変更MODを外します。
+2. [最新のTiny_Stack_P.pakをダウンロード](https://github.com/tanabe1478/ikarus-tiny-stack/releases/latest/download/Tiny_Stack_P.pak)します。
+3. ダウンロードしたPAKを `Icarus/Icarus/Content/Paks/mods/` へコピーします。
+4. ICARUSを起動します。起動中に入れ替えた場合はゲームを再起動します。
+
+Steamの標準インストール先では、配置先は次のフォルダです。
+
+`C:\Program Files (x86)\Steam\steamapps\common\Icarus\Icarus\Content\Paks\mods\`
+
+すべての配布ファイルや過去版は
+[GitHub Releases](https://github.com/tanabe1478/ikarus-tiny-stack/releases)から確認できます。
+倍率・上限・アイテムごとの値を変えたい場合だけ、後述の設定とビルドを行ってください。
 
 ## 変更対象
 
@@ -25,8 +39,8 @@ Caramel Stack size Plusのファイルやデータは使用していません。
 ```json
 {
   "global": {
-    "mode": "multiplier",
-    "value": 5,
+    "mode": "fixed",
+    "value": 1000,
     "cap": 1000
   },
   "individual": {
@@ -52,7 +66,7 @@ Caramel Stack size Plusのファイルやデータは使用していません。
 `build_mod.py` は現在インストールされているICARUSの `data.pak` を展開し、
 最新の `D_Itemable.json` からPAKとEXMODZを生成します。
 
-デフォルト設定は「元のスタック数を5倍、最大1000」です。
+デフォルト設定は「元からスタック可能なアイテムを一律1000」です。
 
 ```powershell
 $env:REPAK_PATH = "C:\path\to\repak.exe"

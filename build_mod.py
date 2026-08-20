@@ -13,7 +13,7 @@ from typing import Any
 
 MOD_ID = "Tiny_Stack"
 MOD_NAME = "Tiny Stack"
-MOD_VERSION = "1.2.0"
+MOD_VERSION = "1.3.0"
 
 DEFAULT_GAME_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Icarus")
 DATA_PAK = Path(
