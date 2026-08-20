@@ -1,0 +1,8 @@
+__pycache__/
+build/
+dist/
+
+# Generated ICARUS artifacts. Build locally or attach to a release.
+*.pak
+*.EXMOD
+*.EXMODZ

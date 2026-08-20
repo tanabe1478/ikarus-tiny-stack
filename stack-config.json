@@ -1,0 +1,8 @@
+{
+  "global": {
+    "mode": "multiplier",
+    "value": 5,
+    "cap": 9999
+  },
+  "individual": {}
+}
