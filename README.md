@@ -1,7 +1,11 @@
 # Tiny Stack
 
-ICARUSのインストール済みゲームデータから独立生成する、設定生成式の軽量スタックMODです。
+ICARUSのゲームデータから独立生成する、設定生成式の軽量スタックMODです。
 Caramel Stack size Plusのファイルやデータは使用していません。
+
+通常利用向けには、デフォルト設定で生成済みのPAKを
+[GitHub Releases](https://github.com/tanabe1478/ikarus-tiny-stack/releases)で配布します。
+設定を変更しない場合、利用者側でのビルドは不要です。
 
 ## 変更対象
 
@@ -23,7 +27,7 @@ Caramel Stack size Plusのファイルやデータは使用していません。
   "global": {
     "mode": "multiplier",
     "value": 5,
-    "cap": 9999
+    "cap": 1000
   },
   "individual": {
     "Item_Wood": 800,
@@ -48,9 +52,17 @@ Caramel Stack size Plusのファイルやデータは使用していません。
 `build_mod.py` は現在インストールされているICARUSの `data.pak` を展開し、
 最新の `D_Itemable.json` からPAKとEXMODZを生成します。
 
+デフォルト設定は「元のスタック数を5倍、最大1000」です。
+
 ```powershell
+$env:REPAK_PATH = "C:\path\to\repak.exe"
 python .\build_mod.py
 ```
+
+PAKツールには[repak](https://github.com/trumank/repak)を推奨します。
+`REPAK_PATH`へ実行ファイルを指定してください。従来のUnrealPakを使う場合は
+`UNREALPAK_PATH`で指定できます。別の `data.pak` を使う場合は
+`ICARUS_DATA_PAK`で指定できます。
 
 生成物は `dist` フォルダに出力されます。
 
@@ -69,6 +81,9 @@ python .\build_mod.py
 `Icarus/Icarus/Content/Paks/mods/`
 
 ICARUSのアップデートでアイテム定義が変更された場合は、ビルドスクリプトを再実行します。
+GitHub Releasesのデフォルト版は、Dedicated Serverの公開データを使ってCIで再生成します。
+CIは毎週金曜日およびビルド設定の変更時に動き、生成PAKが変わった場合だけ
+新しいReleaseを公開します。
 
 ## 実装資料
 

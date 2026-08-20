@@ -2,7 +2,7 @@
   "global": {
     "mode": "multiplier",
     "value": 5,
-    "cap": 9999
+    "cap": 1000
   },
   "individual": {}
 }

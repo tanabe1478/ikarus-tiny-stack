@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -11,24 +13,24 @@ from typing import Any
 
 MOD_ID = "Tiny_Stack"
 MOD_NAME = "Tiny Stack"
-MOD_VERSION = "1.1.0"
+MOD_VERSION = "1.2.0"
 
-GAME_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Icarus")
-DATA_PAK = GAME_DIR / "Icarus" / "Content" / "Data" / "data.pak"
+DEFAULT_GAME_DIR = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Icarus")
+DATA_PAK = Path(
+    os.environ.get(
+        "ICARUS_DATA_PAK",
+        DEFAULT_GAME_DIR / "Icarus" / "Content" / "Data" / "data.pak",
+    )
+)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 WORKSPACE_DIR = PROJECT_DIR.parent
-UNREALPAK = (
-    WORKSPACE_DIR
-    / "tmp"
-    / "icarus_mod_tooling"
-    / "UnrealPak"
-    / "UnrealPak"
-    / "Engine"
-    / "Binaries"
-    / "Win64"
-    / "UnrealPak.exe"
+DEFAULT_UNREALPAK = (
+    WORKSPACE_DIR / "tmp" / "icarus_mod_tooling" / "UnrealPak" / "UnrealPak"
+    / "Engine" / "Binaries" / "Win64" / "UnrealPak.exe"
 )
+UNREALPAK = Path(os.environ.get("UNREALPAK_PATH", DEFAULT_UNREALPAK))
+REPAK = Path(os.environ["REPAK_PATH"]) if os.environ.get("REPAK_PATH") else None
 BUILD_DIR = PROJECT_DIR / "build"
 DIST_DIR = PROJECT_DIR / "dist"
 CONFIG_PATH = PROJECT_DIR / "stack-config.json"
@@ -45,8 +47,39 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def use_repak() -> bool:
+    return REPAK is not None and REPAK.is_file()
+
+
+def repak_mount_point(pak_path: Path) -> str:
+    assert REPAK is not None
+    info = run([str(REPAK), "info", str(pak_path)]).stdout
+    for line in info.splitlines():
+        if line.startswith("mount point: "):
+            return line.removeprefix("mount point: ").strip()
+    raise RuntimeError(f"repak did not report a mount point for {pak_path}")
+
+
 def load_current_itemable(extract_dir: Path) -> tuple[dict, Path]:
-    run([str(UNREALPAK), str(DATA_PAK), "-Extract", str(extract_dir)])
+    if use_repak():
+        assert REPAK is not None
+        mount_point = repak_mount_point(DATA_PAK)
+        run(
+            [
+                str(REPAK),
+                "unpack",
+                "--quiet",
+                "--strip-prefix",
+                mount_point,
+                "--include",
+                "Traits/D_Itemable.json",
+                "--output",
+                str(extract_dir),
+                str(DATA_PAK),
+            ]
+        )
+    else:
+        run([str(UNREALPAK), str(DATA_PAK), "-Extract", str(extract_dir)])
     itemable_path = extract_dir / "Traits" / "D_Itemable.json"
     with itemable_path.open("r", encoding="utf-8-sig") as source:
         return json.load(source), itemable_path
@@ -210,10 +243,31 @@ def create_exmodz(exmod_path: Path, package_readme: Path) -> Path:
 
 def create_pak(itemable_path: Path) -> Path:
     pak_path = DIST_DIR / f"{MOD_ID}_P.pak"
+    mounted_path = "../../../Icarus/Content/data/Traits/"
+
+    if use_repak():
+        assert REPAK is not None
+        run(
+            [
+                str(REPAK),
+                "pack",
+                "--quiet",
+                "--mount-point",
+                mounted_path,
+                "--version",
+                "V11",
+                "--path-hash-seed",
+                "0",
+                str(itemable_path.parent),
+                str(pak_path),
+            ]
+        )
+        return pak_path
+
     response_path = BUILD_DIR / "pak-response.txt"
-    mounted_path = "../../../Icarus/Content/data/Traits/D_Itemable.json"
+    mounted_file = mounted_path + "D_Itemable.json"
     response_path.write_text(
-        f'"{itemable_path}" "{mounted_path}"\n',
+        f'"{itemable_path}" "{mounted_file}"\n',
         encoding="utf-8",
         newline="\n",
     )
@@ -222,6 +276,21 @@ def create_pak(itemable_path: Path) -> Path:
 
 
 def verify_pak(pak_path: Path) -> None:
+    expected_mount = "../../../Icarus/Content/data/Traits/"
+    if use_repak():
+        assert REPAK is not None
+        actual_mount = repak_mount_point(pak_path)
+        if actual_mount != expected_mount:
+            raise RuntimeError(
+                f"PAK verification failed: unexpected mount point {actual_mount}"
+            )
+        listing = run(
+            [str(REPAK), "list", "--strip-prefix", actual_mount, str(pak_path)]
+        ).stdout.splitlines()
+        if listing != ["D_Itemable.json"]:
+            raise RuntimeError(f"PAK verification failed: unexpected files {listing}")
+        return
+
     listing = run([str(UNREALPAK), str(pak_path), "-List"]).stdout
     if "D_Itemable.json" not in listing:
         raise RuntimeError("PAK verification failed: D_Itemable.json is missing")
@@ -229,11 +298,22 @@ def verify_pak(pak_path: Path) -> None:
         raise RuntimeError("PAK verification failed: unexpected mount point")
 
 
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def main() -> None:
     if not DATA_PAK.is_file():
         raise FileNotFoundError(f"ICARUS data.pak was not found: {DATA_PAK}")
-    if not UNREALPAK.is_file():
-        raise FileNotFoundError(f"UnrealPak.exe was not found: {UNREALPAK}")
+    if not use_repak() and not UNREALPAK.is_file():
+        raise FileNotFoundError(
+            "No PAK tool was found. Set REPAK_PATH or UNREALPAK_PATH, or install "
+            f"UnrealPak.exe at: {UNREALPAK}"
+        )
     if not CONFIG_PATH.is_file():
         raise FileNotFoundError(f"Stack configuration was not found: {CONFIG_PATH}")
 
@@ -249,6 +329,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="TinyStack-") as temp_name:
         extract_dir = Path(temp_name) / "base-data"
         itemable, _ = load_current_itemable(extract_dir)
+        write_json(BUILD_DIR / "base" / "D_Itemable.json", itemable)
         changes, catalog = apply_stack_config(itemable, config)
 
         if not changes:
@@ -281,7 +362,9 @@ def main() -> None:
     manifest = {
         "mod": MOD_NAME,
         "version": MOD_VERSION,
-        "source_data_pak": str(DATA_PAK),
+        "source_data_pak": DATA_PAK.name,
+        "source_data_sha256": sha256(DATA_PAK),
+        "pak_tool": "repak" if use_repak() else "UnrealPak",
         "configuration": config,
         "changed_item_count": len(changes),
         "catalog_item_count": len(catalog),

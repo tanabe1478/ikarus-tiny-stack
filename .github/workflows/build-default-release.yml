@@ -1,0 +1,168 @@
+name: Build default release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 1 * * 5"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-default-release.yml"
+      - "build_mod.py"
+      - "verify_mod.py"
+      - "stack-config.json"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tiny-stack-default-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Download verified build tools
+        shell: pwsh
+        run: |
+          $toolsDir = Join-Path $env:RUNNER_TEMP "tiny-stack-tools"
+          New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+
+          $depotZip = Join-Path $toolsDir "DepotDownloader.zip"
+          Invoke-WebRequest `
+            -Uri "https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-windows-x64.zip" `
+            -OutFile $depotZip
+          $depotHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $depotZip).Hash
+          if ($depotHash -ne "41C9E9F0DF54B3AD02E67A11726756E5C73283BD7C2E1B04ACFA5AE4C2ED3767") {
+            throw "DepotDownloader checksum mismatch: $depotHash"
+          }
+          $depotDir = Join-Path $toolsDir "DepotDownloader"
+          Expand-Archive -LiteralPath $depotZip -DestinationPath $depotDir -Force
+
+          $repakZip = Join-Path $toolsDir "repak.zip"
+          Invoke-WebRequest `
+            -Uri "https://github.com/trumank/repak/releases/download/v0.2.3/repak_cli-x86_64-pc-windows-msvc.zip" `
+            -OutFile $repakZip
+          $repakHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $repakZip).Hash
+          if ($repakHash -ne "6720D602144D75DF477A99D5BEDB6EA780997546AFC335901D4937CAFEAA73FA") {
+            throw "repak checksum mismatch: $repakHash"
+          }
+          $repakDir = Join-Path $toolsDir "repak"
+          Expand-Archive -LiteralPath $repakZip -DestinationPath $repakDir -Force
+
+          "DEPOT_DOWNLOADER=$(Join-Path $depotDir 'DepotDownloader.exe')" >> $env:GITHUB_ENV
+          "REPAK_PATH=$(Join-Path $repakDir 'repak.exe')" >> $env:GITHUB_ENV
+
+      - name: Download current ICARUS data
+        shell: pwsh
+        run: |
+          $downloadDir = Join-Path $env:RUNNER_TEMP "icarus-server"
+          $fileList = Join-Path $env:RUNNER_TEMP "icarus-filelist.txt"
+          "Icarus/Content/Data/data.pak" | Set-Content -Encoding utf8 -LiteralPath $fileList
+
+          & $env:DEPOT_DOWNLOADER `
+            -app 2089300 `
+            -depot 2089301 `
+            -filelist $fileList `
+            -dir $downloadDir `
+            -validate
+          if ($LASTEXITCODE -ne 0) {
+            throw "DepotDownloader failed with exit code $LASTEXITCODE"
+          }
+
+          $dataPak = Join-Path $downloadDir "Icarus/Content/Data/data.pak"
+          if (-not (Test-Path -LiteralPath $dataPak -PathType Leaf)) {
+            throw "Downloaded data.pak was not found: $dataPak"
+          }
+          "ICARUS_DATA_PAK=$dataPak" >> $env:GITHUB_ENV
+
+      - name: Build and verify default mod
+        shell: pwsh
+        run: |
+          python .\build_mod.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build failed with exit code $LASTEXITCODE"
+          }
+          python .\verify_mod.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Verification failed with exit code $LASTEXITCODE"
+          }
+
+          $artifacts = @(
+            ".\dist\Tiny_Stack_P.pak",
+            ".\dist\Tiny_Stack.EXMODZ",
+            ".\dist\build-manifest.json",
+            ".\dist\item-catalog.json"
+          )
+          $checksums = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
+            "$hash  $([System.IO.Path]::GetFileName($artifact))"
+          }
+          $checksums | Set-Content -Encoding ascii -LiteralPath ".\dist\SHA256SUMS.txt"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-stack-default
+          path: |
+            dist/Tiny_Stack_P.pak
+            dist/Tiny_Stack.EXMODZ
+            dist/build-manifest.json
+            dist/item-catalog.json
+            dist/SHA256SUMS.txt
+          retention-days: 14
+
+      - name: Publish release when the PAK changes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content -Raw -LiteralPath ".\dist\build-manifest.json" | ConvertFrom-Json
+          $pakHash = (Get-FileHash -Algorithm SHA256 -LiteralPath ".\dist\Tiny_Stack_P.pak").Hash.ToLowerInvariant()
+          $tag = "v$($manifest.version)-default-$($pakHash.Substring(0, 12))"
+
+          gh release view $tag --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; nothing to publish."
+            exit 0
+          }
+
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          @'
+          デフォルト設定で自動生成したTiny Stackです。
+
+          - 元のスタック数を5倍
+          - 最大スタック数は1000
+          - 個別指定なし
+          - 収納枠や容器容量は変更しません
+          - ICARUS Dedicated Server公開データから生成
+
+          通常は `Tiny_Stack_P.pak` をダウンロードしてください。
+          '@ | Set-Content -Encoding utf8 -LiteralPath $notesPath
+
+          $assets = @(
+            ".\dist\Tiny_Stack_P.pak",
+            ".\dist\Tiny_Stack.EXMODZ",
+            ".\dist\build-manifest.json",
+            ".\dist\item-catalog.json",
+            ".\dist\SHA256SUMS.txt"
+          )
+          gh release create $tag @assets `
+            --title "Tiny Stack v$($manifest.version) default (x5 / cap 1000)" `
+            --notes-file $notesPath `
+            --latest
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release creation failed with exit code $LASTEXITCODE"
+          }

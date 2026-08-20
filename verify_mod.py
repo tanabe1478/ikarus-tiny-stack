@@ -13,15 +13,7 @@ from build_mod import (
 )
 
 
-PROJECT_DIR = Path(__file__).resolve().parent
-BASE_ITEMABLE = (
-    PROJECT_DIR.parent
-    / "tmp"
-    / "icarus_mod_tooling"
-    / "current_game_data"
-    / "Traits"
-    / "D_Itemable.json"
-)
+BASE_ITEMABLE = BUILD_DIR / "base" / "D_Itemable.json"
 MODDED_ITEMABLE = BUILD_DIR / "staging" / "D_Itemable.json"
 EXMODZ = DIST_DIR / f"{MOD_ID}.EXMODZ"
 
